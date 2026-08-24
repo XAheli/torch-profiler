@@ -17,6 +17,7 @@ import os
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():

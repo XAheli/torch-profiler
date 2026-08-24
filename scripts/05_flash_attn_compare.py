@@ -18,6 +18,7 @@ import torch
 import torch.nn.functional as F
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 SDPA_BACKENDS = {
@@ -72,16 +73,21 @@ def profile_sdpa_backend(name, backend_enum, q, k, v, warmup, trace_dir, tag):
         print(f"  [{name}] Not available: {e}")
         return None
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        schedule=schedule,
         record_shapes=True,
         with_stack=True,
     ) as prof:
-        with torch.no_grad():
-            with torch.profiler.record_function(f"sdpa_{name}"):
-                with torch.nn.attention.sdpa_kernel(backend_enum):
-                    F.scaled_dot_product_attention(q, k, v, is_causal=True)
-                torch.cuda.synchronize()
+        for _ in range(5):
+            with torch.no_grad():
+                with torch.profiler.record_function(f"sdpa_{name}"):
+                    with torch.nn.attention.sdpa_kernel(backend_enum):
+                        F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            prof.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(trace_dir, f"05_attn_{name}_{tag}.json")
     prof.export_chrome_trace(trace_path)
@@ -115,15 +121,20 @@ def profile_fa3(q, k, v, warmup, trace_dir, tag):
         fa3_func(q_fa3, k_fa3, v_fa3, causal=True)
     torch.cuda.synchronize()
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        schedule=schedule,
         record_shapes=True,
         with_stack=True,
     ) as prof:
-        with torch.profiler.record_function("flash_attn_v3"):
+        for _ in range(5):
             with torch.no_grad():
-                fa3_func(q_fa3, k_fa3, v_fa3, causal=True)
-            torch.cuda.synchronize()
+                with torch.profiler.record_function("flash_attn_v3"):
+                    fa3_func(q_fa3, k_fa3, v_fa3, causal=True)
+            prof.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(trace_dir, f"05_attn_fa3_{tag}.json")
     prof.export_chrome_trace(trace_path)

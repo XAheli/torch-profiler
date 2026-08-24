@@ -17,6 +17,7 @@ import time
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -61,18 +62,39 @@ def profile_mode(layer, hidden, position_embeddings, mode, warmup_iters, trace_d
     compile_time = time.perf_counter() - t0
     print(f"  Warmup + compilation: {compile_time:.2f}s")
 
-    with torch.profiler.profile(
-        activities=[
-            torch.profiler.ProfilerActivity.CPU,
-            torch.profiler.ProfilerActivity.CUDA,
-        ],
-        record_shapes=True,
-        with_stack=True,
-    ) as prof:
-        with torch.no_grad():
-            with torch.profiler.record_function(f"compile_mode_{mode}"):
-                compiled(hidden, position_embeddings=position_embeddings)
-                torch.cuda.synchronize()
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
+    try:
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=schedule,
+            record_shapes=True,
+            with_stack=True,
+        ) as prof:
+            for _ in range(5):
+                with torch.no_grad():
+                    with torch.profiler.record_function(f"compile_mode_{mode}"):
+                        compiled(hidden, position_embeddings=position_embeddings)
+                prof.step()
+            torch.cuda.synchronize()
+    except Exception as e:
+        print(f"  Scheduled profiling failed for mode '{mode}': {e}")
+        print(f"  Falling back to single-shot profiling")
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=True,
+            with_stack=True,
+        ) as prof:
+            with torch.no_grad():
+                with torch.profiler.record_function(f"compile_mode_{mode}"):
+                    compiled(hidden, position_embeddings=position_embeddings)
+                    torch.cuda.synchronize()
 
     trace_path = os.path.join(trace_dir, f"08_compile_{mode}_{short_name}.json")
     prof.export_chrome_trace(trace_path)
@@ -124,18 +146,23 @@ def main():
             layer(hidden, position_embeddings=position_embeddings)
         torch.cuda.synchronize()
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
+        schedule=schedule,
         record_shapes=True,
         with_stack=True,
     ) as prof:
-        with torch.no_grad():
-            with torch.profiler.record_function("eager_baseline"):
-                layer(hidden, position_embeddings=position_embeddings)
-                torch.cuda.synchronize()
+        for _ in range(5):
+            with torch.no_grad():
+                with torch.profiler.record_function("eager_baseline"):
+                    layer(hidden, position_embeddings=position_embeddings)
+            prof.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(args.trace_dir, f"08_compile_eager_{short_name}.json")
     prof.export_chrome_trace(trace_path)

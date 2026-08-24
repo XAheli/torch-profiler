@@ -13,6 +13,7 @@ import os
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -56,17 +57,22 @@ def main():
         fn(a, b, bias)
     torch.cuda.synchronize()
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
+        schedule=schedule,
         record_shapes=True,
         with_stack=True,
     ) as prof:
-        with torch.profiler.record_function(f"matmul_add_{n}x{n}_{tag}"):
-            fn(a, b, bias)
-            torch.cuda.synchronize()
+        for _ in range(5):
+            with torch.profiler.record_function(f"matmul_add_{n}x{n}_{tag}"):
+                fn(a, b, bias)
+            prof.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(args.trace_dir, f"01_warmup_{n}_{tag}.json")
     prof.export_chrome_trace(trace_path)

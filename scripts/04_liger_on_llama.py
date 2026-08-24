@@ -16,6 +16,7 @@ import sys
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -43,19 +44,24 @@ def load_config(model_id):
 def profile_layer(layer, hidden, position_embeddings, label, trace_dir):
     torch.cuda.reset_peak_memory_stats()
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
+        schedule=schedule,
         record_shapes=True,
         profile_memory=True,
         with_stack=True,
     ) as prof:
-        with torch.no_grad():
-            with torch.profiler.record_function(label):
-                layer(hidden, position_embeddings=position_embeddings)
-                torch.cuda.synchronize()
+        for _ in range(5):
+            with torch.no_grad():
+                with torch.profiler.record_function(label):
+                    layer(hidden, position_embeddings=position_embeddings)
+            prof.step()
+        torch.cuda.synchronize()
 
     mem_peak = torch.cuda.max_memory_allocated()
     trace_path = os.path.join(trace_dir, f"04_{label}.json")

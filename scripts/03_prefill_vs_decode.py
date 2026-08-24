@@ -15,6 +15,7 @@ import os
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -32,17 +33,25 @@ def load_model_and_tokenizer(model_id, device, dtype):
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, trust_remote_code=True,
+            cache_dir="/mnt/podman_storage/ahpoddar/.cache/huggingface/hub",
+        )
         model = AutoModelForCausalLM.from_pretrained(
             model_id, torch_dtype=dtype, device_map=device, trust_remote_code=True,
+            cache_dir="/mnt/podman_storage/ahpoddar/.cache/huggingface/hub",
         ).eval()
     except Exception as e:
         print(f"Could not load {model_id}: {e}")
         print("Falling back to TinyLlama/TinyLlama-1.1B-Chat-v1.0\n")
         model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id,
+            cache_dir="/mnt/podman_storage/ahpoddar/.cache/huggingface/hub",
+        )
         model = AutoModelForCausalLM.from_pretrained(
             model_id, torch_dtype=dtype, device_map=device,
+            cache_dir="/mnt/podman_storage/ahpoddar/.cache/huggingface/hub",
         ).eval()
 
     if tokenizer.pad_token is None:

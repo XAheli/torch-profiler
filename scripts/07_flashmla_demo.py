@@ -19,6 +19,7 @@ import os
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -87,14 +88,19 @@ def main():
     print(f"  Step 1: get_mla_metadata — tile scheduler setup")
     print(f"{'='*60}")
 
+    schedule_meta = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        schedule=schedule_meta,
         record_shapes=True,
     ) as prof_meta:
-        with torch.profiler.record_function("get_mla_metadata"):
-            tile_scheduler_metadata, num_splits = get_mla_metadata(
-                cache_seqlens, head_dim_k, num_heads
-            )
+        for _ in range(5):
+            with torch.profiler.record_function("get_mla_metadata"):
+                tile_scheduler_metadata, num_splits = get_mla_metadata(
+                    cache_seqlens, head_dim_k, num_heads
+                )
+            prof_meta.step()
 
     prof_meta.export_chrome_trace(os.path.join(args.trace_dir, "07_flashmla_metadata.json"))
     print(prof_meta.key_averages().table(sort_by="cuda_time_total", row_limit=10))
@@ -131,19 +137,24 @@ def main():
     print(f"  Step 2: flash_mla_with_kvcache — seesaw-scheduled decode")
     print(f"{'='*60}")
 
+    schedule_decode = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        schedule=schedule_decode,
         record_shapes=True,
         with_stack=True,
     ) as prof_decode:
-        with torch.profiler.record_function("flash_mla_decode"):
+        for _ in range(5):
             with torch.no_grad():
-                out, lse = flash_mla_with_kvcache(
-                    q, kv_cache, block_table, cache_seqlens,
-                    head_dim_v, tile_scheduler_metadata, num_splits,
-                    softmax_scale=head_dim_k ** -0.5,
-                )
-            torch.cuda.synchronize()
+                with torch.profiler.record_function("flash_mla_decode"):
+                    out, lse = flash_mla_with_kvcache(
+                        q, kv_cache, block_table, cache_seqlens,
+                        head_dim_v, tile_scheduler_metadata, num_splits,
+                        softmax_scale=head_dim_k ** -0.5,
+                    )
+            prof_decode.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(args.trace_dir, "07_flashmla_decode.json")
     prof_decode.export_chrome_trace(trace_path)

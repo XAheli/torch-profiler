@@ -14,6 +14,7 @@ import os
 import torch
 
 os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
+os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 
 def print_gpu_info():
@@ -79,18 +80,23 @@ def main():
             fn(hidden, position_embeddings=position_embeddings)
         torch.cuda.synchronize()
 
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
+        schedule=schedule,
         record_shapes=True,
         with_stack=True,
     ) as prof:
-        with torch.no_grad():
-            with torch.profiler.record_function("llama_decoder_layer"):
-                fn(hidden, position_embeddings=position_embeddings)
-                torch.cuda.synchronize()
+        for _ in range(5):
+            with torch.no_grad():
+                with torch.profiler.record_function("llama_decoder_layer"):
+                    fn(hidden, position_embeddings=position_embeddings)
+            prof.step()
+        torch.cuda.synchronize()
 
     trace_path = os.path.join(args.trace_dir, f"02_llama_layer_{short_name}_{tag}.json")
     prof.export_chrome_trace(trace_path)
