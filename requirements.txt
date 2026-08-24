@@ -1,0 +1,14 @@
+torch>=2.4.0
+transformers>=4.40.0
+accelerate
+liger-kernel
+tabulate
+sentencepiece
+protobuf
+
+# Source-built packages (not pip-installable):
+#   FlashAttention-3: cd flash-attention/hopper && python setup.py install
+#   FlashMLA:         cd FlashMLA && python setup.py install
+#
+# IMPORTANT: Do NOT run scripts from inside FlashMLA-src/ or DeepGEMM-src/
+# directories — circular imports will occur.
