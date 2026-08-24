@@ -1,8 +1,8 @@
-# torch-profiler
+# Profiling in PyTorch: From torch.profiler to Nsight Compute
 
 GPU profiling scripts for PyTorch workloads on NVIDIA Hopper (H200).
 
-Covers `torch.profiler`, Nsight Systems, and Nsight Compute across real model layers, SOTA attention kernels, and quantized inference.
+Covers `torch.profiler` with Perfetto traces and NVIDIA Nsight Compute for kernel-level analysis across real model layers, SOTA attention kernels, and quantized inference.
 
 ## Scripts
 
@@ -41,21 +41,27 @@ python scripts/05_flash_attn_compare.py --backend auto
 python scripts/06_fp8_gemm.py
 python scripts/07_flashmla_demo.py --head-dim-v 512
 
-# Nsight Systems
-nsys profile --stats=true -o traces/nsight_layer python scripts/09_nsight_target.py
-
 # Nsight Compute
-ncu --set full -o traces/ncu_gemm --kernel-name regex:nvjet --launch-count 1 python scripts/01_warmup_matmul.py --size 4096
+ncu --set full -o traces/ncu_gemm --kernel-name regex:nvjet --launch-count 1 \
+    python scripts/01_warmup_matmul.py --size 4096
 ```
 
 ## Traces
 
-Scripts export Chrome traces (`.json`) to `traces/`. Open at [Perfetto UI](https://ui.perfetto.dev/).
-
-Nsight Compute reports (`.ncu-rep`) open in NCU GUI locally.
+- `torch.profiler` exports Chrome traces (`.json`) to `traces/` — open at [Perfetto UI](https://ui.perfetto.dev/)
+- Nsight Compute reports (`.ncu-rep`) — open in NCU GUI
 
 ## Environment
 
 - 8x NVIDIA H200 SXM (SM 9.0, 143 GB HBM3e)
 - PyTorch 2.14.0.dev (nightly) + CUDA 12.6
 - Nsight Systems 2025.3.2 / Nsight Compute 2025.1.0
+
+## References
+
+- [FlashAttention-3 Paper](https://arxiv.org/abs/2407.08608)
+- [Liger Kernel Paper](https://arxiv.org/abs/2410.10989)
+- [FlashMLA Repository](https://github.com/deepseek-ai/FlashMLA)
+- [PyTorch Profiler Docs](https://pytorch.org/docs/stable/profiler.html)
+- [Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/)
+- [Nsight Compute User Guide](https://docs.nvidia.com/nsight-compute/)
