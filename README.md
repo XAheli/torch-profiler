@@ -1,4 +1,4 @@
-# Profiling in PyTorch: From torch.profiler to Nsight Compute
+# How Fast Is Your Kernel, Really?
 
 GPU kernel profiling on NVIDIA H200 — three SOTA kernels analyzed with `torch.profiler` (Perfetto traces) and NVIDIA Nsight Compute (kernel-level roofline, occupancy, memory throughput).
 

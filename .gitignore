@@ -1,15 +1,19 @@
-traces/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
 .ipynb_checkpoints/
-/tmp/torchinductor_*
-*.nsys-rep
-*.ncu-rep
-*.sqlite
-*.egg-info/
-
-# Build artifacts from SOTA kernel source repos (these are siblings, not inside the project)
-# But in case someone builds inside:
+.cache/
+.cursor/
 build/
 dist/
+*.egg-info/
 *.so
+*.nsys-rep
+*.sqlite
+/tmp/torchinductor_*
+personal_notes/
