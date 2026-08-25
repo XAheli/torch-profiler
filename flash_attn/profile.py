@@ -20,8 +20,8 @@ Kernel sources:
           Kernel name in traces: device_kernel (CUTLASS 3.x CuTeDSL template)
 
 Outputs:
-  - traces/02_fa2_seq{S}.json (Perfetto traces, 4 files)
-  - traces/02_fa3_seq{S}.json (Perfetto traces, 4 files)
+  - flash_attn/traces/fa2_seq{S}.json (Perfetto traces, 4 files)
+  - flash_attn/traces/fa3_seq{S}.json (Perfetto traces, 4 files)
 
 Environment: pt_nightly (Python 3.11, PyTorch 2.14.0.dev)
 """
@@ -44,6 +44,7 @@ def print_gpu_info():
 
 
 def make_qkv(B, H, S, D):
+    # PyTorch SDPA expects [B, H, S, D] layout (heads before sequence)
     q = torch.randn(B, H, S, D, device="cuda", dtype=torch.bfloat16)
     k = torch.randn(B, H, S, D, device="cuda", dtype=torch.bfloat16)
     v = torch.randn(B, H, S, D, device="cuda", dtype=torch.bfloat16)
@@ -51,6 +52,7 @@ def make_qkv(B, H, S, D):
 
 
 def cuda_event_time(fn, reps=20):
+    # CUDA events measure GPU-side wall time; more accurate than profiler for latency
     t0 = torch.cuda.Event(enable_timing=True)
     t1 = torch.cuda.Event(enable_timing=True)
     t0.record()
@@ -67,8 +69,9 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
             F.scaled_dot_product_attention(q, k, v, is_causal=True)
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
     schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(trace_dir, f"02_fa2_seq{seq_len}.json")
+    trace_path = os.path.join(trace_dir, f"fa2_seq{seq_len}.json")
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
@@ -78,7 +81,8 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("fa2_sdpa"):
-                with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                # force FLASH_ATTENTION backend to prevent SDPA from falling back to math or efficient
+            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                     F.scaled_dot_product_attention(q, k, v, is_causal=True)
             prof.step()
         torch.cuda.synchronize()
@@ -86,10 +90,12 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "fa2_sdpa"
     )
+    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0
 
 
 def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
+    # FA-3 uses [B, S, H, D] layout (not [B, H, S, D] like PyTorch SDPA)
     q3 = q.transpose(1, 2).contiguous()
     k3 = k.transpose(1, 2).contiguous()
     v3 = v.transpose(1, 2).contiguous()
@@ -98,8 +104,9 @@ def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
         fa3_func(q3, k3, v3, causal=True)
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
     schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(trace_dir, f"02_fa3_seq{seq_len}.json")
+    trace_path = os.path.join(trace_dir, f"fa3_seq{seq_len}.json")
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
@@ -116,6 +123,7 @@ def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "fa3_hopper"
     )
+    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0
 
 
@@ -125,7 +133,7 @@ def main():
     parser.add_argument("--heads", type=int, default=32)
     parser.add_argument("--head-dim", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--trace-dir", type=str, default="traces")
+    parser.add_argument("--trace-dir", type=str, default="flash_attn/traces")
     args = parser.parse_args()
 
     os.makedirs(args.trace_dir, exist_ok=True)
@@ -146,6 +154,7 @@ def main():
         fa2_us = profile_fa2(q, k, v, args.warmup, args.trace_dir, S)
         fa3_us = profile_fa3(q, k, v, args.warmup, args.trace_dir, S)
 
+        # transpose again for FA-3's [B, S, H, D] layout requirement
         q3 = q.transpose(1, 2).contiguous()
         k3 = k.transpose(1, 2).contiguous()
         v3 = v.transpose(1, 2).contiguous()

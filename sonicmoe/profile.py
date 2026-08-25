@@ -20,7 +20,7 @@ Kernel source:
     - kernel_cutlass_kernel_quackgemm_default_epiGemmDefaultSm90 (down projection)
 
 Outputs:
-  - traces/03_sonicmoe.json (Perfetto trace)
+  - sonicmoe/traces/sonicmoe.json (Perfetto trace)
 
 Environment: py312_sonic (Python 3.12, PyTorch 2.9.1, sonic-moe 0.1.2.post1)
 """
@@ -42,6 +42,7 @@ def print_gpu_info():
 
 
 def cuda_event_time(fn, reps=20):
+    # CUDA events measure GPU-side wall time; more accurate than profiler for latency
     t0 = torch.cuda.Event(enable_timing=True)
     t1 = torch.cuda.Event(enable_timing=True)
     t0.record()
@@ -60,7 +61,7 @@ def main():
     parser.add_argument("--experts", type=int, default=128)
     parser.add_argument("--topk", type=int, default=8)
     parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--trace-dir", type=str, default="traces")
+    parser.add_argument("--trace-dir", type=str, default="sonicmoe/traces")
     args = parser.parse_args()
 
     os.makedirs(args.trace_dir, exist_ok=True)
@@ -72,24 +73,29 @@ def main():
     print(f"Tokens={args.tokens}, Hidden={args.hidden}, Intermediate={args.intermediate}")
     print(f"Experts={args.experts}, TopK={args.topk}\n")
 
+    # SonicMoE paper 7B config: 128 experts, top-8, SwiGLU gating
     moe = MoE(
         num_experts=args.experts,
         num_experts_per_tok=args.topk,
         hidden_size=args.hidden,
+        # intermediate_size is per-expert FFN hidden dim (not total), kept small (256) with many experts
         intermediate_size=args.intermediate,
         activation_function=ActivationType.SWIGLU,
         add_bias=False,
         std=0.02,
     ).to("cuda", dtype=torch.bfloat16)
 
+    # input is [tokens, hidden] — no batch dim; MoE routes individual tokens to experts
     x = torch.randn(args.tokens, args.hidden, device="cuda", dtype=torch.bfloat16)
 
     for _ in range(args.warmup):
+        # SonicMoE returns (output, routing_metadata) tuple; [0] extracts the output tensor
         _ = moe(x)[0]
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
     schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(args.trace_dir, "03_sonicmoe.json")
+    trace_path = os.path.join(args.trace_dir, "sonicmoe.json")
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
@@ -106,11 +112,13 @@ def main():
     cuda_time_us = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "sonicmoe_forward"
     )
+    # divide by 3.0 because schedule records 3 active steps
     avg_cuda_us = cuda_time_us / 3.0
 
     event_ms = cuda_event_time(lambda: moe(x)[0])
 
-    # 2 * tokens * 2 * intermediate * hidden * topk * 2 (up+down, fwd+bwd counted as fwd matmuls)
+    # FLOPs: up_proj (2*T*2n*d) + down_proj (2*T*n*d) per expert, K experts activated
+    # factor of 2 for SwiGLU (gate + up are separate matmuls), outer *2 for multiply-add
     flops = 2 * args.tokens * 2 * args.intermediate * args.hidden * args.topk * 2
     tflops_profiler = flops / (avg_cuda_us * 1e-6) / 1e12
     tflops_event = flops / (event_ms * 1e-3) / 1e12

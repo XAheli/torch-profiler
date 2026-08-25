@@ -14,8 +14,8 @@ Kernel sources:
           Test helpers: DeepGEMM-src/tests/generators.py (generate_normal)
 
 Outputs:
-  - traces/01_gemm_bf16.json         (Perfetto trace)
-  - traces/01_gemm_fp8_deepgemm.json (Perfetto trace)
+  - deepgemm/traces/gemm_bf16.json         (Perfetto trace)
+  - deepgemm/traces/gemm_fp8_deepgemm.json (Perfetto trace)
 
 Environment: pt_nightly (Python 3.11, PyTorch 2.14.0.dev)
 """
@@ -40,6 +40,7 @@ def print_gpu_info():
 
 
 def profile_bf16(M, K, N, warmup, trace_dir):
+    # Llama-3.1-8B MLP projection: [M=batch_tokens, K=hidden] @ [K=hidden, N=ffn_dim]
     a = torch.randn(M, K, device="cuda", dtype=torch.bfloat16)
     b = torch.randn(K, N, device="cuda", dtype=torch.bfloat16)
 
@@ -47,8 +48,9 @@ def profile_bf16(M, K, N, warmup, trace_dir):
         torch.matmul(a, b)
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
     schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(trace_dir, "01_gemm_bf16.json")
+    trace_path = os.path.join(trace_dir, "gemm_bf16.json")
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
@@ -69,23 +71,30 @@ def profile_bf16(M, K, N, warmup, trace_dir):
         e for e in prof.key_averages() if e.device_time_total > 0
     ]
     top_kernel = max(kernels, key=lambda e: e.device_time_total).key if kernels else "N/A"
+    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0, top_kernel
 
 
 def profile_fp8_deepgemm(M, K, N, warmup, trace_dir):
+    # generate_normal handles FP8 casting + TMA-aligned scale factor layout
     a, b, c, d, ref_d = generate_normal(
+        # DeepGEMM expects (M, N, K) order, not (M, K, N)
         M, N, K,
+        # KMajor = column-major tile layout, required for SM90 TMA descriptor alignment
         MajorTypeAB.KMajor, MajorTypeAB.KMajor,
         accumulate=False, out_dtype=torch.bfloat16,
+        # Kernel1D1D: 1D block-scaling for both A and B (per-tile FP8 scale factors)
         kernel_type=KernelType.Kernel1D1D,
     )
 
+    # warmup triggers JIT compilation of the FP8 kernel (first call compiles CUDA C++)
     for _ in range(warmup):
         deep_gemm.fp8_gemm_nt(a, b, d)
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
     schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(trace_dir, "01_gemm_fp8_deepgemm.json")
+    trace_path = os.path.join(trace_dir, "gemm_fp8_deepgemm.json")
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
@@ -106,6 +115,7 @@ def profile_fp8_deepgemm(M, K, N, warmup, trace_dir):
         e for e in prof.key_averages() if e.device_time_total > 0
     ]
     top_kernel = max(kernels, key=lambda e: e.device_time_total).key if kernels else "N/A"
+    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0, top_kernel
 
 
@@ -115,7 +125,7 @@ def main():
     parser.add_argument("--K", type=int, default=4096)
     parser.add_argument("--N", type=int, default=14336)
     parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--trace-dir", type=str, default="traces")
+    parser.add_argument("--trace-dir", type=str, default="deepgemm/traces")
     args = parser.parse_args()
 
     os.makedirs(args.trace_dir, exist_ok=True)
