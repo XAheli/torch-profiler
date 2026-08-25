@@ -1,67 +1,94 @@
 # Profiling in PyTorch: From torch.profiler to Nsight Compute
 
-GPU profiling scripts for PyTorch workloads on NVIDIA Hopper (H200).
+GPU kernel profiling on NVIDIA H200 — three SOTA kernels analyzed with `torch.profiler` (Perfetto traces) and NVIDIA Nsight Compute (kernel-level roofline, occupancy, memory throughput).
 
-Covers `torch.profiler` with Perfetto traces and NVIDIA Nsight Compute for kernel-level analysis across real model layers, SOTA attention kernels, and quantized inference.
+## Kernels
 
-## Scripts
+```
+deepgemm/          DeepGEMM FP8 vs bf16 GEMM (3.09x on H200)
+├── profile.py
+└── traces/
 
-| # | Script | Profiles |
-|---|--------|----------|
-| 01 | `01_warmup_matmul.py` | matmul+add — overhead-bound vs compute-bound |
-| 02 | `02_llama_layer.py` | Single `LlamaDecoderLayer` dispatch chain |
-| 03 | `03_prefill_vs_decode.py` | `model.generate()` — prefill vs decode phases |
-| 04 | `04_liger_on_llama.py` | Vanilla vs Liger fused kernels on a Llama layer |
-| 05 | `05_flash_attn_compare.py` | SDPA math / flash / cuDNN / FlashAttention-3 |
-| 06 | `06_fp8_gemm.py` | bf16 vs FP8 GEMM on Hopper Tensor Cores |
-| 07 | `07_flashmla_demo.py` | FlashMLA paged KV-cache decode |
-| 08 | `08_compile_modes.py` | `torch.compile` default / reduce-overhead / max-autotune |
-| 09 | `09_nsight_target.py` | NVTX-annotated target for `nsys` and `ncu` |
+flash_attn/         FlashAttention-3 vs FA-2 (2.0–2.6x across seq lengths)
+├── profile.py
+└── traces/
+
+sonicmoe/           SonicMoE IO-aware MoE forward (35 TFLOPS on H200)
+├── profile.py
+└── traces/
+```
+
+| Kernel | Source | What it profiles | Speedup |
+|--------|--------|-----------------|---------|
+| **DeepGEMM FP8** | [deepseek-ai/DeepGEMM](https://github.com/deepseek-ai/DeepGEMM) | JIT-compiled FP8 GEMM vs cuBLAS bf16 | 3.09x |
+| **FlashAttention-3** | [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) `hopper/` | Hopper WGMMA+TMA attention vs FA-2 | 2.0–2.6x |
+| **SonicMoE** | [Dao-AILab/sonic-moe](https://github.com/Dao-AILab/sonic-moe) | IO-aware MoE with gather fusion + ping-pong scheduling | 35 TFLOPS |
 
 ## Setup
 
+Two Python environments are needed:
+
 ```bash
+# Environment 1: pt_nightly (Python 3.11) — DeepGEMM + FlashAttention-3
 pip install -r requirements.txt
+
+# Environment 2: py312_sonic (Python 3.12) — SonicMoE
+pip install sonic-moe
 ```
 
-Optional (built from source for Hopper):
+Source builds required for DeepGEMM and FA-3:
 
-| Kernel | Source |
-|--------|--------|
-| FlashAttention-3 | [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) `hopper/` |
-| FlashMLA | [deepseek-ai/FlashMLA](https://github.com/deepseek-ai/FlashMLA) |
-| Liger | `pip install liger-kernel` |
+| Kernel | Build |
+|--------|-------|
+| DeepGEMM | `git clone https://github.com/deepseek-ai/DeepGEMM && cd DeepGEMM && python setup.py build_ext --inplace` |
+| FlashAttention-3 | `git clone https://github.com/Dao-AILab/flash-attention && cd flash-attention/hopper && python setup.py install` |
+| SonicMoE | `pip install sonic-moe` (requires Python 3.12+) |
 
 ## Usage
 
 ```bash
-python scripts/01_warmup_matmul.py --size 4096
-python scripts/02_llama_layer.py
-python scripts/05_flash_attn_compare.py --backend auto
-python scripts/06_fp8_gemm.py
-python scripts/07_flashmla_demo.py --head-dim-v 512
+# DeepGEMM FP8 vs bf16
+python deepgemm/profile.py --M 2048 --K 4096 --N 14336
 
-# Nsight Compute
-ncu --set full -o traces/ncu_gemm --kernel-name regex:nvjet --launch-count 1 \
-    python scripts/01_warmup_matmul.py --size 4096
+# FlashAttention-3 vs FA-2
+python flash_attn/profile.py --batch 4 --heads 32 --head-dim 128
+
+# SonicMoE (requires py312_sonic env)
+python sonicmoe/profile.py --tokens 2048 --experts 128 --topk 8
+```
+
+Nsight Compute:
+```bash
+ncu --set full -o deepgemm/traces/ncu_deepgemm \
+    --kernel-name regex:"sm90_fp8" --launch-count 1 \
+    python deepgemm/profile.py
+
+ncu --set full -o flash_attn/traces/ncu_fa3 \
+    --kernel-name regex:"device_kernel" --launch-skip 10 --launch-count 1 \
+    python flash_attn/profile.py
+
+ncu --set full -o sonicmoe/traces/ncu_sonicmoe \
+    --kernel-name regex:"quackgemm" --launch-skip 3 --launch-count 1 \
+    python sonicmoe/profile.py
 ```
 
 ## Traces
 
-- `torch.profiler` exports Chrome traces (`.json`) to `traces/` — open at [Perfetto UI](https://ui.perfetto.dev/)
-- Nsight Compute reports (`.ncu-rep`) — open in NCU GUI
+Each kernel directory has a `traces/` folder with:
+- `.json` — Chrome traces for [Perfetto UI](https://ui.perfetto.dev/)
+- `.ncu-rep` — Nsight Compute reports for NCU GUI
 
 ## Environment
 
 - 8x NVIDIA H200 SXM (SM 9.0, 143 GB HBM3e)
 - PyTorch 2.14.0.dev (nightly) + CUDA 12.6
-- Nsight Systems 2025.3.2 / Nsight Compute 2025.1.0
+- PyTorch 2.9.1 + CUDA 12.8 (SonicMoE env)
+- Nsight Compute 2025.1.0
 
 ## References
 
+- [DeepGEMM — clean and efficient FP8 GEMM kernels](https://github.com/deepseek-ai/DeepGEMM)
 - [FlashAttention-3 Paper](https://arxiv.org/abs/2407.08608)
-- [Liger Kernel Paper](https://arxiv.org/abs/2410.10989)
-- [FlashMLA Repository](https://github.com/deepseek-ai/FlashMLA)
+- [SonicMoE Paper](https://arxiv.org/abs/2512.14080)
 - [PyTorch Profiler Docs](https://pytorch.org/docs/stable/profiler.html)
-- [Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/)
 - [Nsight Compute User Guide](https://docs.nvidia.com/nsight-compute/)
