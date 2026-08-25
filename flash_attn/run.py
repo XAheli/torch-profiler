@@ -76,13 +76,12 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
         record_shapes=True,
-        with_stack=True,
+        with_stack=False,
         on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("fa2_sdpa"):
-                # force FLASH_ATTENTION backend to prevent SDPA from falling back to math or efficient
-            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                     F.scaled_dot_product_attention(q, k, v, is_causal=True)
             prof.step()
         torch.cuda.synchronize()
@@ -111,7 +110,7 @@ def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
         record_shapes=True,
-        with_stack=True,
+        with_stack=False,
         on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):

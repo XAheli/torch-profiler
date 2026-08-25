@@ -100,7 +100,7 @@ def main():
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         schedule=schedule,
         record_shapes=True,
-        with_stack=True,
+        with_stack=False,
         on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
