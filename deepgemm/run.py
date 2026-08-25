@@ -56,13 +56,14 @@ def profile_bf16(M, K, N, warmup, trace_dir):
         schedule=schedule,
         record_shapes=True,
         with_stack=False,
-        on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("bf16_matmul"):
                 torch.matmul(a, b)
             prof.step()
         torch.cuda.synchronize()
+
+    prof.export_chrome_trace(trace_path)
 
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "bf16_matmul"
@@ -100,13 +101,14 @@ def profile_fp8_deepgemm(M, K, N, warmup, trace_dir):
         schedule=schedule,
         record_shapes=True,
         with_stack=False,
-        on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("fp8_deepgemm"):
                 deep_gemm.fp8_gemm_nt(a, b, d)
             prof.step()
         torch.cuda.synchronize()
+
+    prof.export_chrome_trace(trace_path)
 
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "fp8_deepgemm"

@@ -101,13 +101,14 @@ def main():
         schedule=schedule,
         record_shapes=True,
         with_stack=False,
-        on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("sonicmoe_forward"):
                 out = moe(x)[0]
             prof.step()
         torch.cuda.synchronize()
+
+    prof.export_chrome_trace(trace_path)
 
     cuda_time_us = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "sonicmoe_forward"

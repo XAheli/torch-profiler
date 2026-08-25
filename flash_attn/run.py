@@ -77,7 +77,6 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
         schedule=schedule,
         record_shapes=True,
         with_stack=False,
-        on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("fa2_sdpa"):
@@ -86,10 +85,11 @@ def profile_fa2(q, k, v, warmup, trace_dir, seq_len):
             prof.step()
         torch.cuda.synchronize()
 
+    prof.export_chrome_trace(trace_path)
+
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "fa2_sdpa"
     )
-    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0
 
 
@@ -111,7 +111,6 @@ def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
         schedule=schedule,
         record_shapes=True,
         with_stack=False,
-        on_trace_ready=lambda p: p.export_chrome_trace(trace_path),
     ) as prof:
         for _ in range(5):
             with torch.profiler.record_function("fa3_hopper"):
@@ -119,10 +118,11 @@ def profile_fa3(q, k, v, warmup, trace_dir, seq_len):
             prof.step()
         torch.cuda.synchronize()
 
+    prof.export_chrome_trace(trace_path)
+
     cuda_time = sum(
         e.device_time_total for e in prof.key_averages() if e.key == "fa3_hopper"
     )
-    # divide by 3.0 because schedule records 3 active steps
     return cuda_time / 3.0
 
 
