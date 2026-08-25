@@ -196,7 +196,7 @@ def add_demo_placeholder(slide, text="[LIVE DEMO]"):
         Inches(2), Inches(2.5), Inches(9.333), Inches(3.5)
     )
     shape.fill.solid()
-    shape.fill.fore_color.rgb = RGBColor(0x22, 0x22, 0x3A)
+    shape.fill.fore_color.rgb = RGBColor(0xF0, 0xF4, 0xF8)
     shape.line.color.rgb = BLUE
     shape.line.width = Pt(2)
     tf = shape.text_frame
@@ -266,7 +266,7 @@ add_textbox(sl, Inches(1.5), Inches(4.0), Inches(10.3), Inches(0.6),
             font_size=20, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
 
 hw_box = add_rounded_rect(sl, Inches(4.0), Inches(5.2), Inches(5.3), Inches(0.7),
-                          RGBColor(0x22, 0x22, 0x3A),
+                          RGBColor(0xF0, 0xF4, 0xF8),
                           "NVIDIA H200  \u2022  SM 9.0  \u2022  143 GB HBM3e",
                           font_size=16, text_color=GREEN, border_color=GREEN)
 
@@ -294,7 +294,7 @@ for i, (title, speedup, desc, accent) in enumerate(col_data):
     add_accent_bar(sl, x, y, w, Inches(0.05), accent)
 
     add_rounded_rect(sl, x, y + Inches(0.1), w, Inches(3.2),
-                     RGBColor(0x22, 0x22, 0x3A), border_color=accent)
+                     RGBColor(0xF0, 0xF4, 0xF8), border_color=accent)
 
     add_textbox(sl, x + Inches(0.2), y + Inches(0.3), w - Inches(0.4), Inches(0.5),
                 title, font_size=22, color=accent, bold=True, alignment=PP_ALIGN.CENTER)
@@ -320,7 +320,7 @@ slide_title(sl, "The Profiling Stack")
 
 # Left column: torch.profiler
 add_rounded_rect(sl, Inches(1.0), Inches(1.8), Inches(3.5), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A), "torch.profiler", 20, BLUE, BLUE)
+                 RGBColor(0xF0, 0xF4, 0xF8), "torch.profiler", 20, BLUE, BLUE)
 
 shape = sl.shapes.add_shape(MSO_SHAPE.DOWN_ARROW, Inches(2.5), Inches(2.75), Inches(0.5), Inches(0.5))
 shape.fill.solid()
@@ -328,7 +328,7 @@ shape.fill.fore_color.rgb = BLUE
 shape.line.fill.background()
 
 add_rounded_rect(sl, Inches(1.0), Inches(3.4), Inches(3.5), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A), "Perfetto UI", 20, WHITE, BLUE)
+                 RGBColor(0xF0, 0xF4, 0xF8), "Perfetto UI", 20, WHITE, BLUE)
 
 add_textbox(sl, Inches(1.0), Inches(4.4), Inches(3.5), Inches(0.6),
             "Temporal view: WHEN kernels run",
@@ -336,7 +336,7 @@ add_textbox(sl, Inches(1.0), Inches(4.4), Inches(3.5), Inches(0.6),
 
 # Right column: Nsight Compute
 add_rounded_rect(sl, Inches(8.8), Inches(1.8), Inches(3.5), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A), "Nsight Compute (ncu)", 20, GREEN, GREEN)
+                 RGBColor(0xF0, 0xF4, 0xF8), "Nsight Compute (ncu)", 20, GREEN, GREEN)
 
 shape = sl.shapes.add_shape(MSO_SHAPE.DOWN_ARROW, Inches(10.3), Inches(2.75), Inches(0.5), Inches(0.5))
 shape.fill.solid()
@@ -344,7 +344,7 @@ shape.fill.fore_color.rgb = GREEN
 shape.line.fill.background()
 
 add_rounded_rect(sl, Inches(8.8), Inches(3.4), Inches(3.5), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A), "NCU GUI", 20, WHITE, GREEN)
+                 RGBColor(0xF0, 0xF4, 0xF8), "NCU GUI", 20, WHITE, GREEN)
 
 add_textbox(sl, Inches(8.8), Inches(4.4), Inches(3.5), Inches(0.6),
             "Hardware view: HOW kernels use the GPU",
@@ -378,7 +378,7 @@ add_textbox(sl, Inches(1.0), Inches(3.5), Inches(11.3), Inches(0.5),
             font_size=18, color=LIGHT_GRAY)
 
 add_rounded_rect(sl, Inches(1.0), Inches(4.8), Inches(6.5), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "3.09x faster than bf16 cuBLAS on H200",
                  font_size=22, text_color=GREEN, border_color=GREEN)
 
@@ -406,7 +406,7 @@ add_bullet_list(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(2.2),
 
 # Key insight box
 add_rounded_rect(sl, Inches(2.5), Inches(5.0), Inches(8.3), Inches(1.0),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "2x Tensor Core throughput, half the data size",
                  font_size=24, text_color=GREEN, border_color=GREEN)
 
@@ -437,7 +437,7 @@ for i, item in enumerate(flow_items):
                     "\u2192", font_size=28, color=BLUE, bold=True, alignment=PP_ALIGN.CENTER)
     else:
         add_rounded_rect(sl, x_start + Inches(i * 2.3), Inches(5.2), Inches(2.2), Inches(0.7),
-                         RGBColor(0x22, 0x22, 0x3A), item, 14, WHITE, BLUE)
+                         RGBColor(0xF0, 0xF4, 0xF8), item, 14, WHITE, BLUE)
 
 slide_number(sl, slide_num)
 
@@ -538,7 +538,7 @@ add_textbox(sl, Inches(1.0), Inches(3.5), Inches(11.3), Inches(0.5),
             font_size=18, color=LIGHT_GRAY)
 
 add_rounded_rect(sl, Inches(1.0), Inches(4.8), Inches(8.0), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "2.0\u20132.6x faster than FA-2 across all sequence lengths",
                  font_size=22, text_color=GREEN, border_color=GREEN)
 
@@ -608,7 +608,7 @@ slide_title(sl, "FA-3 \u2014 Kernel Names Tell the Story")
 add_textbox(sl, Inches(0.9), Inches(1.8), Inches(3), Inches(0.4),
             "FlashAttention-2", font_size=18, color=LIGHT_GRAY, bold=True)
 add_rounded_rect(sl, Inches(0.9), Inches(2.3), Inches(5.5), Inches(1.0),
-                 RGBColor(0x22, 0x22, 0x3A), "flash_fwd_kernel",
+                 RGBColor(0xF0, 0xF4, 0xF8), "flash_fwd_kernel",
                  18, WHITE, BLUE)
 add_textbox(sl, Inches(0.9), Inches(3.5), Inches(5.5), Inches(0.5),
             "Hand-written CUDA kernel, vendored in PyTorch",
@@ -618,7 +618,7 @@ add_textbox(sl, Inches(0.9), Inches(3.5), Inches(5.5), Inches(0.5),
 add_textbox(sl, Inches(7.0), Inches(1.8), Inches(3), Inches(0.4),
             "FlashAttention-3", font_size=18, color=LIGHT_GRAY, bold=True)
 add_rounded_rect(sl, Inches(7.0), Inches(2.3), Inches(5.5), Inches(1.0),
-                 RGBColor(0x22, 0x22, 0x3A), "device_kernel",
+                 RGBColor(0xF0, 0xF4, 0xF8), "device_kernel",
                  18, WHITE, GREEN)
 add_textbox(sl, Inches(7.0), Inches(3.5), Inches(5.5), Inches(0.5),
             "CUTLASS 3.x CuTeDSL template, Hopper-native",
@@ -665,7 +665,7 @@ add_textbox(sl, Inches(1.0), Inches(3.5), Inches(11.3), Inches(0.5),
             font_size=18, color=LIGHT_GRAY)
 
 add_rounded_rect(sl, Inches(1.0), Inches(4.8), Inches(8.0), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "45% less activation memory, 1.86x faster than ScatterMoE",
                  font_size=22, text_color=AMBER, border_color=AMBER)
 
@@ -695,7 +695,7 @@ for i, item in enumerate(flow):
                     "\u2192", font_size=28, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
     else:
         add_rounded_rect(sl, x, Inches(4.6), Inches(1.4), Inches(0.7),
-                         RGBColor(0x22, 0x22, 0x3A), item, 16, WHITE, AMBER)
+                         RGBColor(0xF0, 0xF4, 0xF8), item, 16, WHITE, AMBER)
 
 add_textbox(sl, Inches(1.5), Inches(5.8), Inches(10.3), Inches(0.6),
             '"The IO cost scales linearly with expert granularity"',
@@ -726,7 +726,7 @@ for i, (name, desc, accent) in enumerate(innovations):
                 desc, font_size=17, color=WHITE)
 
 add_rounded_rect(sl, Inches(3.0), Inches(5.7), Inches(7.3), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "Result: IO is hidden behind compute",
                  font_size=22, text_color=GREEN, border_color=GREEN)
 
@@ -744,7 +744,7 @@ add_textbox(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(0.5),
             font_size=18, color=LIGHT_GRAY)
 
 add_rounded_rect(sl, Inches(0.9), Inches(2.3), Inches(4.0), Inches(0.8),
-                 RGBColor(0x22, 0x22, 0x3A), "35 TFLOPS on H200",
+                 RGBColor(0xF0, 0xF4, 0xF8), "35 TFLOPS on H200",
                  font_size=24, text_color=AMBER, border_color=AMBER)
 
 items = [
@@ -789,7 +789,7 @@ add_bullet_list(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(2.5),
 
 # Big emphasis
 add_rounded_rect(sl, Inches(2.5), Inches(4.2), Inches(8.3), Inches(1.0),
-                 RGBColor(0x22, 0x22, 0x3A),
+                 RGBColor(0xF0, 0xF4, 0xF8),
                  "These GEMM kernels ARE the bottleneck in production",
                  font_size=24, text_color=AMBER, border_color=AMBER)
 
