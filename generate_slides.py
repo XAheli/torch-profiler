@@ -26,14 +26,20 @@ TABLE_HEADER_BG = RGBColor(0x0E, 0x6E, 0xB8)
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
 FONT = "Calibri"
+MONO_FONT = "Consolas"
 
 ASSETS = "/home/ahpoddar/.cursor/projects/mnt-podman-storage-ahpoddar/assets"
 OUT = "/mnt/podman_storage/ahpoddar/torch-profiler-workshop/slides.pptx"
 
+TOTAL_SLIDES = 33
+
 # Map screenshot filenames by rough purpose (DeepGEMM profiling)
-DEEPGEMM_SCREENSHOTS = sorted(
-    [os.path.join(ASSETS, f) for f in os.listdir(ASSETS) if f.endswith(".png")]
-)
+if os.path.isdir(ASSETS):
+    DEEPGEMM_SCREENSHOTS = sorted(
+        [os.path.join(ASSETS, f) for f in os.listdir(ASSETS) if f.endswith(".png")]
+    )
+else:
+    DEEPGEMM_SCREENSHOTS = []
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -169,7 +175,7 @@ def add_table(slide, left, top, width, height, rows, cols, data,
 
             # Colors
             if r == 0:
-                p.font.color.rgb = WHITE
+                p.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
                 cell_fill = cell.fill
                 cell_fill.solid()
                 cell_fill.fore_color.rgb = TABLE_HEADER_BG
@@ -179,7 +185,7 @@ def add_table(slide, left, top, width, height, rows, cols, data,
                 cell_fill.solid()
                 cell_fill.fore_color.rgb = TABLE_ROW_DARK if r % 2 == 1 else TABLE_ROW_LIGHT
 
-            # Remove cell borders by making them match bg
+            # Remove cell borders
             tcPr = cell._tc.get_or_add_tcPr()
             for border_name in ["a:lnL", "a:lnR", "a:lnT", "a:lnB"]:
                 ln = tcPr.makeelement(qn(border_name), {"w": "0"})
@@ -213,6 +219,33 @@ def add_demo_placeholder(slide, text="[LIVE DEMO]"):
     return shape
 
 
+def add_screenshot_placeholder(slide, text="[SCREENSHOT]", left=None,
+                               top=None, width=None, height=None):
+    """Gray rectangle with dashed-style border and centered placeholder text."""
+    left = left or Inches(2.0)
+    top = top or Inches(2.0)
+    width = width or Inches(9.333)
+    height = height or Inches(3.5)
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, left, top, width, height
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor(0xE8, 0xEE, 0xF4)
+    shape.line.color.rgb = DIM_GRAY
+    shape.line.width = Pt(2)
+    tf = shape.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    p.text = text
+    p.font.size = Pt(24)
+    p.font.color.rgb = DIM_GRAY
+    p.font.bold = True
+    p.font.name = FONT
+    p.alignment = PP_ALIGN.CENTER
+    return shape
+
+
 def add_screenshot(slide, img_path, left, top, width, height=None):
     if os.path.exists(img_path):
         pic = slide.shapes.add_picture(img_path, left, top, width, height)
@@ -229,7 +262,7 @@ def slide_title(slide, text, subtitle=None, top=Inches(0.3)):
                     subtitle, font_size=16, color=LIGHT_GRAY)
 
 
-def slide_number(slide, num, total=24):
+def slide_number(slide, num, total=TOTAL_SLIDES):
     add_textbox(slide, Inches(12.2), Inches(7.0), Inches(1), Inches(0.4),
                 f"{num}/{total}", font_size=11, color=DIM_GRAY,
                 alignment=PP_ALIGN.RIGHT)
@@ -261,11 +294,19 @@ add_textbox(sl, Inches(1.5), Inches(2.6), Inches(10.3), Inches(0.8),
 
 add_accent_bar(sl, Inches(5.5), Inches(3.7), Inches(2.3), Inches(0.04), BLUE)
 
-add_textbox(sl, Inches(1.5), Inches(4.0), Inches(10.3), Inches(0.6),
-            "Red Hat PyTorch Team  |  IISC Bangalore",
-            font_size=20, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+add_textbox(sl, Inches(1.5), Inches(3.9), Inches(10.3), Inches(0.6),
+            "Aheli Poddar",
+            font_size=22, color=WHITE, bold=True, alignment=PP_ALIGN.CENTER)
 
-hw_box = add_rounded_rect(sl, Inches(4.0), Inches(5.2), Inches(5.3), Inches(0.7),
+add_textbox(sl, Inches(1.5), Inches(4.4), Inches(10.3), Inches(0.6),
+            "Associate Software Engineer, Red Hat PyTorch",
+            font_size=18, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+add_textbox(sl, Inches(1.5), Inches(5.0), Inches(10.3), Inches(0.6),
+            "IISC Bangalore",
+            font_size=18, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+hw_box = add_rounded_rect(sl, Inches(4.0), Inches(5.8), Inches(5.3), Inches(0.7),
                           RGBColor(0xF0, 0xF4, 0xF8),
                           "NVIDIA H200  \u2022  SM 9.0  \u2022  143 GB HBM3e",
                           font_size=16, text_color=GREEN, border_color=GREEN)
@@ -318,7 +359,6 @@ sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
 slide_title(sl, "The Profiling Stack")
 
-# Left column: torch.profiler
 add_rounded_rect(sl, Inches(1.0), Inches(1.8), Inches(3.5), Inches(0.8),
                  RGBColor(0xF0, 0xF4, 0xF8), "torch.profiler", 20, BLUE, BLUE)
 
@@ -334,7 +374,6 @@ add_textbox(sl, Inches(1.0), Inches(4.4), Inches(3.5), Inches(0.6),
             "Temporal view: WHEN kernels run",
             font_size=14, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
 
-# Right column: Nsight Compute
 add_rounded_rect(sl, Inches(8.8), Inches(1.8), Inches(3.5), Inches(0.8),
                  RGBColor(0xF0, 0xF4, 0xF8), "Nsight Compute (ncu)", 20, GREEN, GREEN)
 
@@ -350,7 +389,6 @@ add_textbox(sl, Inches(8.8), Inches(4.4), Inches(3.5), Inches(0.6),
             "Hardware view: HOW kernels use the GPU",
             font_size=14, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
 
-# Quote
 add_accent_bar(sl, Inches(2.5), Inches(5.6), Inches(8.3), Inches(0.04), AMBER)
 add_textbox(sl, Inches(2.0), Inches(5.9), Inches(9.3), Inches(0.6),
             "torch.profiler tells you WHAT happened.  NCU tells you WHY.",
@@ -359,7 +397,7 @@ add_textbox(sl, Inches(2.0), Inches(5.9), Inches(9.3), Inches(0.6),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 4: Kernel 1 \u2014 DeepGEMM Title =====
+# ===== SLIDE 4: Kernel 1 — DeepGEMM Title =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl, BG_ALT)
@@ -391,7 +429,6 @@ sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
 slide_title(sl, "What is FP8?")
 
-# E4M3 bit layout
 add_textbox(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(0.5),
             "E4M3 Format:  [S] [E E E E] [M M M]",
             font_size=26, color=WHITE, bold=True)
@@ -404,7 +441,6 @@ items = [
 add_bullet_list(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(2.2),
                 items, font_size=18, color=WHITE)
 
-# Key insight box
 add_rounded_rect(sl, Inches(2.5), Inches(5.0), Inches(8.3), Inches(1.0),
                  RGBColor(0xF0, 0xF4, 0xF8),
                  "2x Tensor Core throughput, half the data size",
@@ -428,7 +464,6 @@ items = [
 add_bullet_list(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(3.5),
                 items, font_size=20, color=WHITE)
 
-# Flow diagram
 flow_items = ["generate_normal", "\u2192", "transpose_fp32", "\u2192", "sm90_fp8_gemm_1d2d_impl"]
 x_start = Inches(1.0)
 for i, item in enumerate(flow_items):
@@ -442,13 +477,12 @@ for i, item in enumerate(flow_items):
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 7: DeepGEMM \u2014 Perfetto Trace =====
+# ===== SLIDE 7: DeepGEMM — Perfetto Trace =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
 slide_title(sl, "DeepGEMM \u2014 Perfetto Trace")
 
-# Use first screenshot if available
 if len(DEEPGEMM_SCREENSHOTS) >= 1:
     add_screenshot(sl, DEEPGEMM_SCREENSHOTS[0],
                    Inches(0.8), Inches(1.3), Inches(11.7), Inches(4.5))
@@ -465,7 +499,102 @@ add_textbox(sl, Inches(0.9), Inches(6.5), Inches(11.5), Inches(0.5),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 8: DeepGEMM \u2014 NCU Comparison =====
+# ===== SLIDE 8: DeepGEMM — Perfetto: bf16 Baseline =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "DeepGEMM \u2014 Perfetto: bf16 Baseline")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: Perfetto bf16 trace]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(3.2))
+
+tf = add_textbox(sl, Inches(0.9), Inches(5.0), Inches(11.5), Inches(0.4),
+                 "CPU: bf16_matmul \u2192 aten::matmul \u2192 aten::mm",
+                 font_size=16, color=WHITE, font_name=MONO_FONT)
+add_paragraph(tf, "GPU: nvjet_tst_256x128_64x4_1x2_h_bz_coopA_NNT",
+              font_size=16, color=WHITE, font_name=MONO_FONT)
+add_paragraph(tf, "3 ProfilerSteps \u00d7 ~300\u00b5s each",
+              font_size=16, color=AMBER, bold=True)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 9: DeepGEMM — Perfetto: FP8 Trace =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "DeepGEMM \u2014 Perfetto: FP8 Trace")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: Perfetto FP8 trace]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(3.2))
+
+tf = add_textbox(sl, Inches(0.9), Inches(5.0), Inches(11.5), Inches(0.4),
+                 "CPU: fp8_deepgemm annotation",
+                 font_size=16, color=WHITE, font_name=MONO_FONT)
+add_paragraph(tf, "GPU: transpose_fp32 (8\u00b5s) + sm90_fp8_gemm_1d2d_impl (~195\u00b5s)",
+              font_size=16, color=WHITE, font_name=MONO_FONT)
+add_paragraph(tf, "Note: transpose_fp32 has padded stride 33 to avoid SMEM bank conflicts",
+              font_size=15, color=AMBER, bold=True)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 10: DeepGEMM — Kernel Name Decode =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "Reading Kernel Names")
+
+# Left column: bf16 kernel name breakdown
+add_textbox(sl, Inches(0.5), Inches(1.2), Inches(3.0), Inches(0.4),
+            "bf16 cuBLAS", font_size=18, color=BLUE, bold=True)
+
+bf16_lines = [
+    "nvjet_tst_256x128_64x4_1x2_h_bz_coopA_NNT",
+    "",
+    "nvjet       = NVIDIA JetBLAS (Hopper cuBLAS)",
+    "tst         = tensor-sparse-tensor variant",
+    "256x128     = CTA tile (rows \u00d7 cols)",
+    "64x4        = 64 K-tile \u00d7 4 pipeline stages",
+    "1x2         = warp arrangement",
+    "h           = Hopper architecture",
+    "bz          = block-zero optimization",
+    "coopA       = cooperative launch on A",
+    "NNT         = layout (A=row, B=row, out=col)",
+]
+tf = add_textbox(sl, Inches(0.4), Inches(1.7), Inches(6.3), Inches(5.5),
+                 bf16_lines[0], font_size=12, color=WHITE, font_name=MONO_FONT)
+for line in bf16_lines[1:]:
+    add_paragraph(tf, line, font_size=12, color=WHITE if "=" not in line else LIGHT_GRAY,
+                  font_name=MONO_FONT)
+
+# Right column: FP8 kernel name breakdown
+add_textbox(sl, Inches(7.0), Inches(1.2), Inches(3.0), Inches(0.4),
+            "FP8 DeepGEMM", font_size=18, color=GREEN, bold=True)
+
+fp8_lines = [
+    "sm90_fp8_gemm_1d2d_impl",
+    "",
+    "sm90  = Hopper SM 9.0",
+    "fp8   = FP8 precision",
+    "gemm  = General Matrix Multiply",
+    "1d    = 1D scale on A (per-token)",
+    "2d    = 2D scale on B (per-128\u00d7128 block)",
+    "impl  = implementation kernel",
+]
+tf = add_textbox(sl, Inches(7.0), Inches(1.7), Inches(5.8), Inches(5.5),
+                 fp8_lines[0], font_size=13, color=WHITE, font_name=MONO_FONT)
+for line in fp8_lines[1:]:
+    add_paragraph(tf, line, font_size=13, color=WHITE if "=" not in line else LIGHT_GRAY,
+                  font_name=MONO_FONT)
+
+# Vertical divider
+add_accent_bar(sl, Inches(6.65), Inches(1.5), Inches(0.03), Inches(5.0), DIM_GRAY)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 11: DeepGEMM — NCU Comparison =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -492,7 +621,116 @@ add_textbox(sl, Inches(1.0), Inches(5.5), Inches(11.3), Inches(1.0),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 9: DeepGEMM \u2014 NCU Key Findings =====
+# ===== SLIDE 12: NCU: bf16 Speed of Light =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "NCU: bf16 GEMM \u2014 Speed of Light")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU bf16 Speed of Light chart]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(3.5))
+
+add_textbox(sl, Inches(1.0), Inches(5.3), Inches(11.3), Inches(0.5),
+            "91.6% Compute Throughput \u2014 this is what \u2018good\u2019 looks like",
+            font_size=20, color=GREEN, bold=True, alignment=PP_ALIGN.CENTER)
+
+add_textbox(sl, Inches(1.0), Inches(5.9), Inches(11.3), Inches(0.5),
+            "NCU flags: \u201cHigh Throughput \u2014 utilizing greater than 80%\u201d",
+            font_size=16, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 13: NCU: FP8 Speed of Light =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "NCU: DeepGEMM FP8 \u2014 Speed of Light")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FP8 Speed of Light chart]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(3.5))
+
+add_textbox(sl, Inches(1.0), Inches(5.3), Inches(11.3), Inches(0.5),
+            "67.1% Compute, 54.5% Memory \u2014 compute-bound with scale factor overhead",
+            font_size=20, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 14: NCU: Memory Architecture =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "NCU: Memory Data Path Comparison")
+
+# Left column: bf16
+add_textbox(sl, Inches(0.6), Inches(1.2), Inches(2.0), Inches(0.4),
+            "bf16", font_size=20, color=BLUE, bold=True)
+
+bf16_mem_items = [
+    "TMA: 344K instructions",
+    "Data: 2.82 GB through pipeline",
+    "DSMEM: 382 instructions (uses SM clusters)",
+    "Memory BW: 969 GB/s",
+]
+add_bullet_list(sl, Inches(0.6), Inches(1.7), Inches(5.8), Inches(2.0),
+                bf16_mem_items, font_size=16, color=WHITE, bullet_color=BLUE)
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU bf16 memory diagram]",
+                           Inches(0.6), Inches(4.0), Inches(5.8), Inches(2.8))
+
+# Right column: FP8
+add_textbox(sl, Inches(7.0), Inches(1.2), Inches(3.0), Inches(0.4),
+            "FP8 DeepGEMM", font_size=20, color=GREEN, bold=True)
+
+fp8_mem_items = [
+    "TMA: 59K instructions (6x fewer)",
+    "Data: 1.44 GB (half the data)",
+    "DSMEM: 0 (no cross-SM sharing)",
+    "Memory BW: 543 GB/s",
+]
+add_bullet_list(sl, Inches(7.0), Inches(1.7), Inches(5.8), Inches(2.0),
+                fp8_mem_items, font_size=16, color=WHITE, bullet_color=GREEN)
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FP8 memory diagram]",
+                           Inches(7.0), Inches(4.0), Inches(5.8), Inches(2.8))
+
+# Vertical divider
+add_accent_bar(sl, Inches(6.6), Inches(1.2), Inches(0.03), Inches(5.8), DIM_GRAY)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 15: NCU: Occupancy =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "NCU: Occupancy \u2014 Both Kernels Are Resource-Heavy")
+
+data = [
+    ["Metric", "bf16", "FP8"],
+    ["Registers/Thread", "168", "168"],
+    ["Dynamic SMEM/Block", "213 KB", "216 KB"],
+    ["Theoretical Occupancy", "18.75%", "18.75%"],
+    ["Achieved Occupancy", "14.72%", "14.00%"],
+    ["Block Limit (Registers)", "1", "1"],
+    ["Block Limit (Shared Mem)", "1", "1"],
+    ["Grid Size", "132 (= 132 SMs)", "132"],
+    ["Cluster Size", "2", "2"],
+]
+
+add_table(sl, Inches(1.5), Inches(1.3), Inches(10.3), Inches(4.5),
+          len(data), 3, data,
+          col_widths=[Inches(4.5), Inches(2.9), Inches(2.9)])
+
+add_textbox(sl, Inches(1.0), Inches(6.1), Inches(11.3), Inches(0.8),
+            "Both kernels use maximum on-chip resources. 1 block per SM. Low occupancy by design.",
+            font_size=18, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 16: DeepGEMM — NCU Key Findings =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -501,7 +739,7 @@ slide_title(sl, "DeepGEMM \u2014 NCU Key Findings")
 findings = [
     ("Barrier Stalls", "4.3 cycles/warp (32.95% est. speedup)", BLUE),
     ("Occupancy", "14% achieved (18.75% theoretical) \u2014 limited by 168 regs + 216 KB SMEM", GREEN),
-    ("Shared Store Bank Conflicts", "12.55% \u2014 scale factor write pattern", AMBER),
+    ("Shared Store Bank Conflicts", "FP8: 12.55% vs bf16: 8.65% \u2014 FP8 pays extra for scale factor stores", AMBER),
 ]
 
 for i, (label, detail, accent) in enumerate(findings):
@@ -519,7 +757,7 @@ add_textbox(sl, Inches(1.5), Inches(6.0), Inches(10.3), Inches(0.6),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 10: Kernel 2 \u2014 FlashAttention-3 Title =====
+# ===== SLIDE 17: Kernel 2 — FlashAttention-3 Title =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl, BG_ALT)
@@ -545,7 +783,7 @@ add_rounded_rect(sl, Inches(1.0), Inches(4.8), Inches(8.0), Inches(0.8),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 11: FA-2 to FA-3 =====
+# ===== SLIDE 18: FA-2 to FA-3 =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -573,7 +811,7 @@ add_textbox(sl, Inches(0.9), Inches(5.4), Inches(11.5), Inches(0.5),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 12: FA-3 Scaling Results =====
+# ===== SLIDE 19: FA-3 Scaling Results =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -598,13 +836,12 @@ add_textbox(sl, Inches(1.5), Inches(5.3), Inches(10.3), Inches(0.6),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 13: FA-3 Kernel Names =====
+# ===== SLIDE 20: FA-3 Kernel Names =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
 slide_title(sl, "FA-3 \u2014 Kernel Names Tell the Story")
 
-# FA-2 box
 add_textbox(sl, Inches(0.9), Inches(1.8), Inches(3), Inches(0.4),
             "FlashAttention-2", font_size=18, color=LIGHT_GRAY, bold=True)
 add_rounded_rect(sl, Inches(0.9), Inches(2.3), Inches(5.5), Inches(1.0),
@@ -614,7 +851,6 @@ add_textbox(sl, Inches(0.9), Inches(3.5), Inches(5.5), Inches(0.5),
             "Hand-written CUDA kernel, vendored in PyTorch",
             font_size=14, color=LIGHT_GRAY)
 
-# FA-3 box
 add_textbox(sl, Inches(7.0), Inches(1.8), Inches(3), Inches(0.4),
             "FlashAttention-3", font_size=18, color=LIGHT_GRAY, bold=True)
 add_rounded_rect(sl, Inches(7.0), Inches(2.3), Inches(5.5), Inches(1.0),
@@ -624,7 +860,6 @@ add_textbox(sl, Inches(7.0), Inches(3.5), Inches(5.5), Inches(0.5),
             "CUTLASS 3.x CuTeDSL template, Hopper-native",
             font_size=14, color=LIGHT_GRAY)
 
-# Arrow
 add_textbox(sl, Inches(6.0), Inches(2.5), Inches(1.2), Inches(0.7),
             "\u2192", font_size=36, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
 
@@ -635,7 +870,7 @@ add_textbox(sl, Inches(1.5), Inches(5.2), Inches(10.3), Inches(0.8),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 14: FA-3 Perfetto Trace =====
+# ===== SLIDE 21: FA-3 Perfetto Trace =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -646,7 +881,23 @@ add_demo_placeholder(sl, "[LIVE DEMO \u2014 Perfetto UI]\n\nFA-2 trace (flash_fw
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 15: Kernel 3 \u2014 SonicMoE Title =====
+# ===== SLIDE 22: FA-3 — NCU Comparison (NEW) =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "FA-3 \u2014 NCU Comparison")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FA-2 vs FA-3]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(4.5))
+
+add_textbox(sl, Inches(1.0), Inches(6.3), Inches(11.3), Inches(0.5),
+            "Compare: occupancy, warp stalls, memory throughput between FA-2 and FA-3 kernels",
+            font_size=16, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 23: Kernel 3 — SonicMoE Title =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl, BG_ALT)
@@ -672,7 +923,7 @@ add_rounded_rect(sl, Inches(1.0), Inches(4.8), Inches(8.0), Inches(0.8),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 16: Why MoE Kernels Are Hard =====
+# ===== SLIDE 24: Why MoE Kernels Are Hard =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -686,7 +937,6 @@ items = [
 add_bullet_list(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(3.0),
                 items, font_size=20, color=WHITE)
 
-# Flow diagram
 flow = ["Gather", "\u2192", "Pad", "\u2192", "GEMM", "\u2192", "Scatter"]
 for i, item in enumerate(flow):
     x = Inches(1.0 + i * 1.6)
@@ -704,7 +954,7 @@ add_textbox(sl, Inches(1.5), Inches(5.8), Inches(10.3), Inches(0.6),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 17: SonicMoE Key Innovations =====
+# ===== SLIDE 25: SonicMoE Key Innovations =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -733,7 +983,7 @@ add_rounded_rect(sl, Inches(3.0), Inches(5.7), Inches(7.3), Inches(0.8),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 18: SonicMoE Profiler Results =====
+# ===== SLIDE 26: SonicMoE Profiler Results =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -763,7 +1013,7 @@ add_textbox(sl, Inches(1.5), Inches(5.8), Inches(10.3), Inches(0.6),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 19: SonicMoE Perfetto Trace =====
+# ===== SLIDE 27: SonicMoE Perfetto Trace =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -774,7 +1024,23 @@ add_demo_placeholder(sl, "[LIVE DEMO \u2014 Perfetto UI]\n\nsonicmoe_forward ann
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 20: The Production Picture =====
+# ===== SLIDE 28: SonicMoE — NCU Details (NEW) =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "SonicMoE \u2014 NCU Details")
+
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU SonicMoE kernel]",
+                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(4.5))
+
+add_textbox(sl, Inches(1.0), Inches(6.3), Inches(11.3), Inches(0.5),
+            "quackgemm kernel: occupancy, memory throughput, warp stall breakdown",
+            font_size=16, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 29: The Production Picture =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -787,7 +1053,6 @@ items = [
 add_bullet_list(sl, Inches(0.9), Inches(1.5), Inches(11), Inches(2.5),
                 items, font_size=20, color=WHITE)
 
-# Big emphasis
 add_rounded_rect(sl, Inches(2.5), Inches(4.2), Inches(8.3), Inches(1.0),
                  RGBColor(0xF0, 0xF4, 0xF8),
                  "These GEMM kernels ARE the bottleneck in production",
@@ -796,7 +1061,7 @@ add_rounded_rect(sl, Inches(2.5), Inches(4.2), Inches(8.3), Inches(1.0),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 21: Summary Table =====
+# ===== SLIDE 30: Summary Table =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -819,7 +1084,7 @@ add_table(sl, Inches(0.8), Inches(1.5), Inches(11.7), Inches(2.8),
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 22: Takeaways =====
+# ===== SLIDE 31: Takeaways =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -845,7 +1110,7 @@ for i, (main, sub, accent) in enumerate(takeaways):
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 23: Resources =====
+# ===== SLIDE 32: Resources =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -868,13 +1133,13 @@ for i, (label, url, accent) in enumerate(resources):
 
 add_accent_bar(sl, Inches(1.2), Inches(6.2), Inches(11), Inches(0.03), BLUE)
 add_textbox(sl, Inches(1.2), Inches(6.4), Inches(11), Inches(0.5),
-            "Red Hat PyTorch Team", font_size=18, color=LIGHT_GRAY,
+            "Aheli Poddar  |  Red Hat PyTorch Team", font_size=18, color=LIGHT_GRAY,
             alignment=PP_ALIGN.CENTER)
 
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 24: Thank You =====
+# ===== SLIDE 33: Thank You =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
@@ -892,7 +1157,7 @@ add_textbox(sl, Inches(1.5), Inches(3.6), Inches(10.3), Inches(0.6),
             alignment=PP_ALIGN.CENTER)
 
 add_textbox(sl, Inches(1.5), Inches(4.6), Inches(10.3), Inches(0.5),
-            "Red Hat PyTorch Team", font_size=22, color=LIGHT_GRAY,
+            "Aheli Poddar  |  Red Hat PyTorch Team", font_size=22, color=LIGHT_GRAY,
             alignment=PP_ALIGN.CENTER)
 
 add_textbox(sl, Inches(1.5), Inches(5.5), Inches(10.3), Inches(0.5),
