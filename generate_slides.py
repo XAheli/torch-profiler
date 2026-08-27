@@ -31,7 +31,7 @@ MONO_FONT = "Consolas"
 ASSETS = "/home/ahpoddar/.cursor/projects/mnt-podman-storage-ahpoddar/assets"
 OUT = "/mnt/podman_storage/ahpoddar/torch-profiler-workshop/slides.pptx"
 
-TOTAL_SLIDES = 33
+TOTAL_SLIDES = 36
 
 # Map screenshot filenames by rough purpose (DeepGEMM profiling)
 if os.path.isdir(ASSETS):
@@ -842,29 +842,46 @@ sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
 slide_title(sl, "FA-3 \u2014 Kernel Names Tell the Story")
 
-add_textbox(sl, Inches(0.9), Inches(1.8), Inches(3), Inches(0.4),
+add_textbox(sl, Inches(0.9), Inches(1.5), Inches(3), Inches(0.4),
             "FlashAttention-2", font_size=18, color=LIGHT_GRAY, bold=True)
-add_rounded_rect(sl, Inches(0.9), Inches(2.3), Inches(5.5), Inches(1.0),
+add_rounded_rect(sl, Inches(0.9), Inches(2.0), Inches(5.5), Inches(0.8),
                  RGBColor(0xF0, 0xF4, 0xF8), "flash_fwd_kernel",
                  18, WHITE, BLUE)
-add_textbox(sl, Inches(0.9), Inches(3.5), Inches(5.5), Inches(0.5),
+add_textbox(sl, Inches(0.9), Inches(2.9), Inches(5.5), Inches(0.4),
             "Hand-written CUDA kernel, vendored in PyTorch",
             font_size=14, color=LIGHT_GRAY)
 
-add_textbox(sl, Inches(7.0), Inches(1.8), Inches(3), Inches(0.4),
+fa2_stats = [
+    "255 regs/thread (hardware max!)",
+    "0 TMA instructions \u2014 legacy ld.global only",
+    "211K local memory loads (register spills to HBM)",
+    "128 threads/block (4 warps)",
+]
+add_bullet_list(sl, Inches(0.9), Inches(3.4), Inches(5.5), Inches(2.2),
+                fa2_stats, font_size=13, color=WHITE, bullet_color=BLUE)
+
+add_textbox(sl, Inches(7.0), Inches(1.5), Inches(3), Inches(0.4),
             "FlashAttention-3", font_size=18, color=LIGHT_GRAY, bold=True)
-add_rounded_rect(sl, Inches(7.0), Inches(2.3), Inches(5.5), Inches(1.0),
+add_rounded_rect(sl, Inches(7.0), Inches(2.0), Inches(5.5), Inches(0.8),
                  RGBColor(0xF0, 0xF4, 0xF8), "device_kernel",
                  18, WHITE, GREEN)
-add_textbox(sl, Inches(7.0), Inches(3.5), Inches(5.5), Inches(0.5),
+add_textbox(sl, Inches(7.0), Inches(2.9), Inches(5.5), Inches(0.4),
             "CUTLASS 3.x CuTeDSL template, Hopper-native",
             font_size=14, color=LIGHT_GRAY)
 
-add_textbox(sl, Inches(6.0), Inches(2.5), Inches(1.2), Inches(0.7),
-            "\u2192", font_size=36, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
+fa3_stats = [
+    "168 regs/thread (no spills!)",
+    "7.17K TMA instructions \u2014 hardware DMA engine",
+    "0 local memory loads (zero register spills)",
+    "384 threads/block (12 warps)",
+]
+add_bullet_list(sl, Inches(7.0), Inches(3.4), Inches(5.5), Inches(2.2),
+                fa3_stats, font_size=13, color=WHITE, bullet_color=GREEN)
 
-add_textbox(sl, Inches(1.5), Inches(5.2), Inches(10.3), Inches(0.8),
-            '"The name change reflects the architecture shift:\nfrom hand-tuned to template-generated"',
+add_accent_bar(sl, Inches(6.55), Inches(1.5), Inches(0.03), Inches(4.5), DIM_GRAY)
+
+add_textbox(sl, Inches(1.5), Inches(5.8), Inches(10.3), Inches(0.8),
+            '"From hand-tuned to template-generated \u2014 fewer registers, zero spills, hardware DMA"',
             font_size=20, color=AMBER, bold=True, alignment=PP_ALIGN.CENTER)
 
 slide_number(sl, slide_num)
@@ -881,18 +898,164 @@ add_demo_placeholder(sl, "[LIVE DEMO \u2014 Perfetto UI]\n\nFA-2 trace (flash_fw
 slide_number(sl, slide_num)
 
 
-# ===== SLIDE 22: FA-3 — NCU Comparison (NEW) =====
+# ===== SLIDE 22: FA-3 — NCU: The Register Spill Story (NEW) =====
 slide_num += 1
 sl = prs.slides.add_slide(blank_layout)
 set_slide_bg(sl)
-slide_title(sl, "FA-3 \u2014 NCU Comparison")
+slide_title(sl, "FA-3 \u2014 NCU: The Register Spill Story")
 
-add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FA-2 vs FA-3]",
-                           Inches(1.5), Inches(1.5), Inches(10.3), Inches(4.5))
+# FA-2 side
+add_rounded_rect(sl, Inches(0.7), Inches(1.5), Inches(5.8), Inches(2.5),
+                 RGBColor(0xF0, 0xF4, 0xF8), border_color=BLUE)
+add_textbox(sl, Inches(0.9), Inches(1.6), Inches(5.4), Inches(0.4),
+            "FA-2  (flash_fwd_kernel)", font_size=18, color=BLUE, bold=True)
 
-add_textbox(sl, Inches(1.0), Inches(6.3), Inches(11.3), Inches(0.5),
-            "Compare: occupancy, warp stalls, memory throughput between FA-2 and FA-3 kernels",
+fa2_spill_items = [
+    "255 registers/thread \u2014 hardware maximum",
+    "211,970 local memory load instructions",
+    "Local memory = HBM round-trips!",
+    "L1TEX suggestion: 29.4% est. speedup",
+    "1/32 bytes utilized per sector (catastrophic)",
+]
+add_bullet_list(sl, Inches(0.9), Inches(2.1), Inches(5.4), Inches(1.8),
+                fa2_spill_items, font_size=14, color=WHITE, bullet_color=BLUE)
+
+# FA-3 side
+add_rounded_rect(sl, Inches(6.8), Inches(1.5), Inches(5.8), Inches(2.5),
+                 RGBColor(0xF0, 0xF4, 0xF8), border_color=GREEN)
+add_textbox(sl, Inches(7.0), Inches(1.6), Inches(5.4), Inches(0.4),
+            "FA-3  (device_kernel)", font_size=18, color=GREEN, bold=True)
+
+fa3_spill_items = [
+    "168 registers/thread \u2014 87 fewer",
+    "0 local memory load instructions",
+    "7,170 TMA instructions (hardware DMA)",
+    "196.91 KB SMEM (vs 63.54 KB)",
+    "Data lives in SMEM, not registers",
+]
+add_bullet_list(sl, Inches(7.0), Inches(2.1), Inches(5.4), Inches(1.8),
+                fa3_spill_items, font_size=14, color=WHITE, bullet_color=GREEN)
+
+add_rounded_rect(sl, Inches(2.5), Inches(4.5), Inches(8.3), Inches(0.8),
+                 RGBColor(0xF0, 0xF4, 0xF8),
+                 "FA-3 uses FEWER registers but spills LESS",
+                 font_size=22, text_color=AMBER, border_color=AMBER)
+
+add_textbox(sl, Inches(1.0), Inches(5.6), Inches(11.3), Inches(1.0),
+            "How?  TMA offloads data movement from registers \u2192 hardware DMA engine.\n"
+            "SMEM used aggressively (196 KB vs 63 KB) \u2014 data lives in shared memory, not registers.",
             font_size=16, color=LIGHT_GRAY, alignment=PP_ALIGN.CENTER)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 23: FA-3 — NCU: Speed of Light Comparison (NEW) =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "FA-3 \u2014 NCU: Speed of Light Comparison")
+
+# Side-by-side screenshot placeholders
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FA-2 Speed of Light]",
+                           Inches(0.5), Inches(1.4), Inches(6.0), Inches(2.8))
+add_screenshot_placeholder(sl, "[SCREENSHOT: NCU FA-3 Speed of Light]",
+                           Inches(6.8), Inches(1.4), Inches(6.0), Inches(2.8))
+
+add_textbox(sl, Inches(0.5), Inches(4.4), Inches(6.0), Inches(0.3),
+            "FA-2: 28.6% compute, 30.4% memory",
+            font_size=15, color=BLUE, bold=True, alignment=PP_ALIGN.CENTER)
+add_textbox(sl, Inches(6.8), Inches(4.4), Inches(6.0), Inches(0.3),
+            "FA-3: 41.8% compute, 35.6% memory",
+            font_size=15, color=GREEN, bold=True, alignment=PP_ALIGN.CENTER)
+
+sol_data = [
+    ["Metric", "FA-2", "FA-3"],
+    ["Duration (NCU)", "76.90 \u00b5s", "35.46 \u00b5s"],
+    ["Compute Throughput", "28.56%", "41.80%"],
+    ["Memory Throughput", "30.35%", "35.60%"],
+    ["Achieved Occupancy", "1.18%", "13.10%"],
+]
+
+add_table(sl, Inches(2.5), Inches(4.9), Inches(8.3), Inches(2.2),
+          len(sol_data), 3, sol_data,
+          col_widths=[Inches(3.3), Inches(2.5), Inches(2.5)])
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 24: FA-3 — NCU: Memory Architecture (NEW) =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "FA-3 \u2014 NCU: Memory Architecture")
+
+# FA-2 memory path
+add_textbox(sl, Inches(0.6), Inches(1.2), Inches(2.0), Inches(0.4),
+            "FA-2 Data Path", font_size=20, color=BLUE, bold=True)
+
+fa2_path = [
+    "HBM \u2192 legacy ld.global \u2192 Registers \u2192 SMEM",
+    "49.96K global load instructions",
+    "0 TMA instructions",
+    "9.04% L1/TEX hit rate (cache thrashing)",
+    "63.54 KB dynamic SMEM per block",
+    "Register-heavy: 255/255 used",
+]
+add_bullet_list(sl, Inches(0.6), Inches(1.7), Inches(5.8), Inches(3.0),
+                fa2_path, font_size=15, color=WHITE, bullet_color=BLUE)
+
+# FA-3 memory path
+add_textbox(sl, Inches(7.0), Inches(1.2), Inches(3.0), Inches(0.4),
+            "FA-3 Data Path", font_size=20, color=GREEN, bold=True)
+
+fa3_path = [
+    "HBM \u2192 TMA \u2192 SMEM (bypasses registers!)",
+    "8.70K global load instructions (6x fewer)",
+    "7.17K TMA instructions",
+    "67.29% L1/TEX hit rate (7x better)",
+    "196.91 KB dynamic SMEM per block (3x more)",
+    "Register-light: 168/255 used",
+]
+add_bullet_list(sl, Inches(7.0), Inches(1.7), Inches(5.8), Inches(3.0),
+                fa3_path, font_size=15, color=WHITE, bullet_color=GREEN)
+
+add_accent_bar(sl, Inches(6.6), Inches(1.2), Inches(0.03), Inches(4.5), DIM_GRAY)
+
+add_rounded_rect(sl, Inches(2.0), Inches(5.5), Inches(9.3), Inches(1.0),
+                 RGBColor(0xF0, 0xF4, 0xF8),
+                 "TMA bypasses registers entirely \u2014 hardware DMA loads 2D tiles from HBM to SMEM",
+                 font_size=18, text_color=GREEN, border_color=GREEN)
+
+slide_number(sl, slide_num)
+
+
+# ===== SLIDE 25: FA-3 — NCU Comparison Table (UPDATED) =====
+slide_num += 1
+sl = prs.slides.add_slide(blank_layout)
+set_slide_bg(sl)
+slide_title(sl, "FA-3 \u2014 NCU Comparison (Verified on H200)")
+
+ncu_data = [
+    ["Metric", "FA-2 (flash_fwd_kernel)", "FA-3 (device_kernel)"],
+    ["Duration", "76.90 \u00b5s", "35.46 \u00b5s"],
+    ["Compute Throughput", "28.56%", "41.80%"],
+    ["Registers/Thread", "255 (max!)", "168"],
+    ["Block Size", "128 (4 warps)", "384 (12 warps)"],
+    ["Dynamic SMEM/Block", "63.54 KB", "196.91 KB"],
+    ["TMA Instructions", "0", "7,170"],
+    ["Local Mem Loads", "211,970 (spills!)", "0"],
+    ["L1/TEX Hit Rate", "9.04%", "67.29%"],
+    ["Achieved Occupancy", "1.18%", "13.10%"],
+    ["Theor. Occupancy", "12.50%", "18.75%"],
+]
+
+add_table(sl, Inches(1.0), Inches(1.2), Inches(11.3), Inches(5.0),
+          len(ncu_data), 3, ncu_data,
+          col_widths=[Inches(3.5), Inches(3.9), Inches(3.9)])
+
+add_textbox(sl, Inches(1.0), Inches(6.5), Inches(11.3), Inches(0.5),
+            "FA-3: 2.17x faster, 11x better occupancy, zero register spills",
+            font_size=18, color=GREEN, bold=True, alignment=PP_ALIGN.CENTER)
 
 slide_number(sl, slide_num)
 
