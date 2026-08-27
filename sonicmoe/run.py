@@ -113,21 +113,26 @@ def profile_one(name, fn, x, trace_path, warmup_iters):
         fn(x)
     torch.cuda.synchronize()
 
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
+        schedule=schedule,
         record_shapes=True,
         with_stack=False,
     ) as prof:
-        for _ in range(3):
+        for _ in range(5):  # 1 wait + 1 warmup + 3 active = 5 steps
             with torch.profiler.record_function(f"{name}_forward"):
                 fn(x)
+            prof.step()
         torch.cuda.synchronize()
 
     prof.export_chrome_trace(trace_path)
 
+    # divide by 3.0 because schedule records 3 active steps
     cuda_time_us = sum(
         e.device_time_total
         for e in prof.key_averages()
