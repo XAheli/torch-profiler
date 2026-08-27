@@ -17,3 +17,5 @@ dist/
 *.sqlite
 /tmp/torchinductor_*
 personal_notes/
+generate_slides.py
+slides.pptx
