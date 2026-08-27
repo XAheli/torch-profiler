@@ -113,23 +113,19 @@ def profile_one(name, fn, x, trace_path, warmup_iters):
         fn(x)
     torch.cuda.synchronize()
 
-    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
-        schedule=schedule,
         record_shapes=True,
-        with_stack=False,  # avoids source-correlation overlap warnings
+        with_stack=False,
     ) as prof:
-        for _ in range(5):  # 1 wait + 1 warmup + 3 active = 5 steps
+        for _ in range(3):
             with torch.profiler.record_function(f"{name}_forward"):
                 fn(x)
-            prof.step()
         torch.cuda.synchronize()
 
-    # Export AFTER profiler context closes to avoid Perfetto overlaps
     prof.export_chrome_trace(trace_path)
 
     cuda_time_us = sum(
