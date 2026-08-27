@@ -1,26 +1,27 @@
 #!/mnt/podman_storage/ahpoddar/micromamba_root/envs/py312_sonic/bin/python
 """
-SonicMoE MoE forward pass profiling on NVIDIA H200.
+SonicMoE vs ScatterMoE — MoE forward pass profiling on NVIDIA H200.
 
-Profiles Tri Dao's SonicMoE — a hardware-efficient MoE implementation that
-overlaps IO with computation using CuTeDSL/CUTLASS 3.x on Hopper GPUs.
-Configuration matches SonicMoE paper's 7B MoE (d=1536, n=256, E=128, K=8).
+Profiles two MoE kernel implementations back-to-back on identical configs:
 
-SonicMoE's key innovations:
-  - IO-aware kernel design: overlaps GMEM loads with Tensor Core MMA
-  - Ping-pong warpgroup scheduling for epilogue overlap
-  - Gather fusion: token gather fused with GEMM prologue (no separate kernel)
-  - 45% less activation memory than ScatterMoE
+  ScatterMoE (baseline):
+    - Triton-based MoE with gather/scatter fusion (Shawn Tan)
+    - Source: https://github.com/shawntan/scattermoe
+    - Kernel names in traces: triton_*  (Triton JIT-compiled)
+    - NOTE: ScatterMoE is a GEMM-only kernel — it expects pre-computed
+      routing weights/indices from an external gate, so we provide our own
+      nn.Linear gate + softmax + topk outside the timed region.
 
-Kernel source:
-  - pip install sonic-moe (from https://github.com/Dao-AILab/sonic-moe)
-  - Underlying GEMM: quack-kernels (CUTLASS 3.x based)
-  - Kernel names in traces:
-    - kernel_cutlass_kernel_quackgemm_actGemmGatedSm90 (up projection + SwiGLU)
-    - kernel_cutlass_kernel_quackgemm_default_epiGemmDefaultSm90 (down projection)
+  SonicMoE:
+    - CuTeDSL/CUTLASS 3.x IO-aware MoE for Hopper GPUs (Tri Dao lab)
+    - Source: https://github.com/Dao-AILab/sonic-moe (pip install sonic-moe)
+    - Kernel names in traces:
+        kernel_cutlass_kernel_quackgemm_actGemmGatedSm90  (up + SwiGLU)
+        kernel_cutlass_kernel_quackgemm_default_epiGemmDefaultSm90  (down)
+    - NOTE: SonicMoE is a complete MoE module — routing is handled
+      internally, and forward() returns a (output, routing_metadata) tuple.
 
-Outputs:
-  - sonicmoe/traces/sonicmoe.json (Perfetto trace)
+Configuration: 7B-class MoE (d=1536, n=256, E=128, K=8) from SonicMoE paper.
 
 Environment: py312_sonic (Python 3.12, PyTorch 2.9.1, sonic-moe 0.1.2.post1)
 """
@@ -29,7 +30,12 @@ os.environ["PATH"] = "/usr/local/cuda-12.8/bin:" + os.environ.get("PATH", "")
 os.environ["HF_HOME"] = "/mnt/podman_storage/ahpoddar/.cache/huggingface"
 
 import argparse
+
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from scattermoe.mlp import MLP as ScatterMLP
 from sonicmoe.moe import MoE
 from sonicmoe.enums import ActivationType
 
@@ -42,7 +48,6 @@ def print_gpu_info():
 
 
 def cuda_event_time(fn, reps=20):
-    # CUDA events measure GPU-side wall time; more accurate than profiler for latency
     t0 = torch.cuda.Event(enable_timing=True)
     t1 = torch.cuda.Event(enable_timing=True)
     t0.record()
@@ -53,8 +58,99 @@ def cuda_event_time(fn, reps=20):
     return t0.elapsed_time(t1) / reps
 
 
+def build_scatter_moe(args, device, dtype):
+    """Build ScatterMoE MLP + external gate.
+
+    ScatterMoE is a GEMM kernel, not a full MoE layer — it needs
+    pre-computed expert_weights and expert_indices from an external router.
+    We create a simple nn.Linear gate to produce those.
+    """
+    scatter_mlp = ScatterMLP(
+        input_size=args.hidden,
+        hidden_size=args.intermediate,
+        num_experts=args.experts,
+        top_k=args.topk,
+        bias=False,
+        activation=F.silu,
+    ).to(device, dtype=dtype)
+
+    gate = nn.Linear(args.hidden, args.experts, bias=False).to(device, dtype=dtype)
+
+    def forward(x):
+        logits = gate(x)
+        scores = F.softmax(logits, dim=-1)
+        expert_weights, expert_indices = torch.topk(scores, args.topk, dim=-1)
+        return scatter_mlp(x, expert_weights, expert_indices)
+
+    return forward
+
+
+def build_sonic_moe(args, device, dtype):
+    """Build SonicMoE module.
+
+    SonicMoE handles routing internally — forward() returns a
+    (output, routing_metadata) tuple; we index [0] to get the output tensor.
+    """
+    sonic = MoE(
+        num_experts=args.experts,
+        num_experts_per_tok=args.topk,
+        hidden_size=args.hidden,
+        intermediate_size=args.intermediate,
+        activation_function=ActivationType.SWIGLU,
+        add_bias=False,
+        std=0.02,
+    ).to(device, dtype=dtype)
+
+    def forward(x):
+        return sonic(x)[0]  # [0] extracts output from (output, metadata) tuple
+
+    return forward
+
+
+def profile_one(name, fn, x, trace_path, warmup_iters):
+    """Run torch.profiler for one backend and export trace."""
+    for _ in range(warmup_iters):
+        fn(x)
+    torch.cuda.synchronize()
+
+    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
+    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
+    with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        schedule=schedule,
+        record_shapes=True,
+        with_stack=False,
+    ) as prof:
+        for _ in range(5):  # 1 wait + 1 warmup + 3 active = 5 steps
+            with torch.profiler.record_function(f"{name}_forward"):
+                fn(x)
+            prof.step()
+        torch.cuda.synchronize()
+
+    prof.export_chrome_trace(trace_path)
+
+    # divide by 3.0 because schedule records 3 active steps
+    cuda_time_us = sum(
+        e.device_time_total
+        for e in prof.key_averages()
+        if e.key == f"{name}_forward"
+    )
+    avg_cuda_us = cuda_time_us / 3.0  # 3 active steps
+
+    kernels = sorted(
+        [e for e in prof.key_averages() if e.device_time_total > 0],
+        key=lambda e: -e.device_time_total,
+    )
+    return avg_cuda_us, kernels
+
+
 def main():
-    parser = argparse.ArgumentParser(description="SonicMoE profiling")
+    parser = argparse.ArgumentParser(
+        description="SonicMoE vs ScatterMoE profiling"
+    )
     parser.add_argument("--tokens", type=int, default=2048)
     parser.add_argument("--hidden", type=int, default=1536)
     parser.add_argument("--intermediate", type=int, default=256)
@@ -65,85 +161,89 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.trace_dir, exist_ok=True)
+    device = "cuda"
+    dtype = torch.bfloat16
 
-    print("=" * 70)
-    print("SonicMoE — MoE Forward Pass Profiling")
-    print("=" * 70)
+    print("=" * 72)
+    print("SonicMoE vs ScatterMoE — MoE Forward Pass Profiling")
+    print("=" * 72)
     print_gpu_info()
-    print(f"Tokens={args.tokens}, Hidden={args.hidden}, Intermediate={args.intermediate}")
+    print(f"Tokens={args.tokens}, Hidden={args.hidden}, "
+          f"Intermediate={args.intermediate}")
     print(f"Experts={args.experts}, TopK={args.topk}\n")
 
-    # SonicMoE paper 7B config: 128 experts, top-8, SwiGLU gating
-    moe = MoE(
-        num_experts=args.experts,
-        num_experts_per_tok=args.topk,
-        hidden_size=args.hidden,
-        # intermediate_size is per-expert FFN hidden dim (not total), kept small (256) with many experts
-        intermediate_size=args.intermediate,
-        activation_function=ActivationType.SWIGLU,
-        add_bias=False,
-        std=0.02,
-    ).to("cuda", dtype=torch.bfloat16)
+    x = torch.randn(args.tokens, args.hidden, device=device, dtype=dtype)
 
-    # input is [tokens, hidden] — no batch dim; MoE routes individual tokens to experts
-    x = torch.randn(args.tokens, args.hidden, device="cuda", dtype=torch.bfloat16)
-
-    for _ in range(args.warmup):
-        # SonicMoE returns (output, routing_metadata) tuple; [0] extracts the output tensor
-        _ = moe(x)[0]
-    torch.cuda.synchronize()
-
-    # schedule: skip 1 step (init noise), warmup 1 (let caches settle), record 3 active steps
-    schedule = torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1)
-    trace_path = os.path.join(args.trace_dir, "sonicmoe.json")
-    with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        schedule=schedule,
-        record_shapes=True,
-        with_stack=False,
-    ) as prof:
-        for _ in range(5):
-            with torch.profiler.record_function("sonicmoe_forward"):
-                out = moe(x)[0]
-            prof.step()
-        torch.cuda.synchronize()
-
-    prof.export_chrome_trace(trace_path)
-
-    cuda_time_us = sum(
-        e.device_time_total for e in prof.key_averages() if e.key == "sonicmoe_forward"
+    # FLOPs per forward pass:
+    #   up_proj: 2 * T * K * (2n * d)  — factor 2n for SwiGLU gate+up
+    #   down_proj: 2 * T * K * (n * d)
+    #   total: 2 * T * K * (2*n*d + n*d) = 2 * T * K * 3*n*d
+    flops = 2 * args.tokens * args.topk * (
+        2 * args.intermediate * args.hidden  # up+gate (SwiGLU)
+        + args.intermediate * args.hidden    # down
     )
-    # divide by 3.0 because schedule records 3 active steps
-    avg_cuda_us = cuda_time_us / 3.0
 
-    event_ms = cuda_event_time(lambda: moe(x)[0])
+    # ── ScatterMoE ────────────────────────────────────────────────────────
+    print("-" * 72)
+    print("[1/2] Profiling ScatterMoE (Triton baseline)...")
+    print("-" * 72)
 
-    # FLOPs: up_proj (2*T*2n*d) + down_proj (2*T*n*d) per expert, K experts activated
-    # factor of 2 for SwiGLU (gate + up are separate matmuls), outer *2 for multiply-add
-    flops = 2 * args.tokens * 2 * args.intermediate * args.hidden * args.topk * 2
-    tflops_profiler = flops / (avg_cuda_us * 1e-6) / 1e12
-    tflops_event = flops / (event_ms * 1e-3) / 1e12
+    scatter_fn = build_scatter_moe(args, device, dtype)
+    scatter_trace = os.path.join(args.trace_dir, "scattermoe.json")
 
-    print("=" * 70)
-    print("Results")
-    print("=" * 70)
-    print(f"  Profiler CUDA time (avg active): {avg_cuda_us:.1f} µs")
-    print(f"  CUDA Event time (20 iters avg):  {event_ms:.3f} ms")
-    print(f"  TFLOPS (profiler):               {tflops_profiler:.2f}")
-    print(f"  TFLOPS (event):                  {tflops_event:.2f}")
+    scatter_us, scatter_kernels = profile_one(
+        "scattermoe", scatter_fn, x, scatter_trace, args.warmup
+    )
+    scatter_event_ms = cuda_event_time(lambda: scatter_fn(x))
+
+    print(f"  Profiler CUDA time: {scatter_us:.1f} µs")
+    print(f"  Event time:         {scatter_event_ms:.3f} ms")
+    print(f"  Trace: {scatter_trace}\n")
+
+    # ── SonicMoE ──────────────────────────────────────────────────────────
+    print("-" * 72)
+    print("[2/2] Profiling SonicMoE (CUTLASS 3.x)...")
+    print("-" * 72)
+
+    sonic_fn = build_sonic_moe(args, device, dtype)
+    sonic_trace = os.path.join(args.trace_dir, "sonicmoe.json")
+
+    sonic_us, sonic_kernels = profile_one(
+        "sonicmoe", sonic_fn, x, sonic_trace, args.warmup
+    )
+    sonic_event_ms = cuda_event_time(lambda: sonic_fn(x))
+
+    print(f"  Profiler CUDA time: {sonic_us:.1f} µs")
+    print(f"  Event time:         {sonic_event_ms:.3f} ms")
+    print(f"  Trace: {sonic_trace}\n")
+
+    # ── Comparison ────────────────────────────────────────────────────────
+    scatter_tflops = flops / (scatter_event_ms * 1e-3) / 1e12
+    sonic_tflops = flops / (sonic_event_ms * 1e-3) / 1e12
+    speedup = scatter_event_ms / sonic_event_ms
+
+    print("=" * 72)
+    print("Comparison (CUDA event timing, 20-iter average)")
+    print("=" * 72)
+    print(f"  {'Metric':<30} {'ScatterMoE':<18} {'SonicMoE':<18}")
+    print("  " + "-" * 66)
+    print(f"  {'CUDA time (ms)':<30} {scatter_event_ms:<18.3f} {sonic_event_ms:<18.3f}")
+    print(f"  {'TFLOPS':<30} {scatter_tflops:<18.2f} {sonic_tflops:<18.2f}")
+    print(f"  {'Speedup (vs ScatterMoE)':<30} {'1.00x':<18} {f'{speedup:.2f}x':<18}")
     print()
 
-    print("Top CUDA kernels:")
-    print(f"  {'Kernel':<60} {'CUDA time (µs)':<14} {'Calls'}")
-    print("  " + "-" * 80)
-    kernel_events = sorted(
-        [e for e in prof.key_averages() if e.device_time_total > 0],
-        key=lambda e: -e.device_time_total,
-    )
-    for e in kernel_events[:10]:
-        print(f"  {e.key[:58]:<60} {e.device_time_total:<14.1f} {e.count}")
+    for label, kernels in [("ScatterMoE", scatter_kernels),
+                           ("SonicMoE", sonic_kernels)]:
+        print(f"Top CUDA kernels — {label}:")
+        print(f"  {'Kernel':<60} {'CUDA µs':<12} {'Calls'}")
+        print("  " + "-" * 78)
+        for e in kernels[:8]:
+            print(f"  {e.key[:58]:<60} {e.device_time_total:<12.1f} {e.count}")
+        print()
 
-    print(f"\nTrace saved to: {trace_path}")
+    print("Traces saved to:")
+    print(f"  ScatterMoE: {scatter_trace}")
+    print(f"  SonicMoE:   {sonic_trace}")
 
 
 if __name__ == "__main__":
